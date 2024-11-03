@@ -9,6 +9,11 @@ WORKDIR /app
 
 # Copy the Python script into the container
 COPY main.py .
+# Copy the requirements file into the container
+COPY requirements.txt .
+
+# Install required Python packages
+RUN pip install -r requirements.txt
 
 # Set the command to run the Python script
 ENTRYPOINT ["python", "/app/main.py"]
