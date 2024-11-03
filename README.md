@@ -7,11 +7,13 @@ This project provides a Python script that retrieves files modified in the lates
 - Get a list of files modified in the latest commit.
 - Retrieve updated lines for each modified file.
 - Easy integration with CI/CD pipelines.
+- Review code changes using the LLaMA model from Ollama.
 
 ## Prerequisites
 
 - Docker
 - Git
+- Python 3.11 or higher (for local testing)
 
 ## Setup
 
