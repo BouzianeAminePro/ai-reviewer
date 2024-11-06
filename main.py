@@ -1,7 +1,8 @@
 import subprocess
-from langchain.llms import Ollama
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from langchain_ollama import OllamaLLM as Ollama
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
+from pydantic import BaseModel, Field
 
 def get_latest_commit_files():
     """Get files changed in the latest commit."""
@@ -20,11 +21,11 @@ def get_changed_lines(file_path):
         stdout=subprocess.PIPE,
         text=True
     )
-    changes = []
+    changes = ""
     for line in result.stdout.splitlines():
         # Only consider added lines
         if line.startswith('+') and not line.startswith('+++'):
-            changes.append(line[1:])
+            changes += line[1:]
     return changes
 
 def review_changes_with_llama(changed_lines):
@@ -34,19 +35,20 @@ def review_changes_with_llama(changed_lines):
 
     # Define a prompt template for reviewing code changes
     template = """
-    Please provide only the updated code from the following changes without any additional text, and the code not in a markdown close:
-    {code}
+    Here's a text where file name seperated by an empty line with it code {code},
+    Please update, optimize and resolve bugs of the code
+    {format_instructions}
     """
 
-    # Use LangChain's prompt and chain functionality to generate a response
-    prompt = PromptTemplate(input_variables=["code"], template=template)
-    chain = LLMChain(llm=llm, prompt=prompt)
+    class Review(BaseModel):
+        fileName: str = Field(description="File name")
+        code: str = Field(description="Updated code")
 
-    # Join changed lines as a single string to pass into the LLM
-    code_to_review = "\n".join(changed_lines)
-    review = chain.run(code=code_to_review)
+    parser = JsonOutputParser(pydantic_object=Review)
+    prompt = PromptTemplate(input_variables=["code"], template=template, partial_variables={"format_instructions": parser.get_format_instructions()})
 
-    return review
+    chain = prompt | llm | parser
+    return chain.invoke(input={"code": changed_lines})
 
 def main():
     print("Getting files modified in the latest commit...")
@@ -55,22 +57,18 @@ def main():
         print("No files changed in the latest commit.")
         return
 
-    all_changes = []
+    all_changes = ""
     for file_path in modified_files:
-        print(f"\nChanges in {file_path}:")
         changed_lines = get_changed_lines(file_path)
         if changed_lines:
-            all_changes.extend(changed_lines)
-            for line in changed_lines:
-                print(line)
+            all_changes = "\n".join([all_changes, file_path, changed_lines])
         else:
             print("No new lines added.")
-
+            
     if all_changes:
         # Review the changes with the LLaMA model
         print("\nReviewing changes with LLaMA 3.2 model...")
         review = review_changes_with_llama(all_changes)
-        print("\nModel Review:")
         print(review)
 
 if __name__ == "__main__":

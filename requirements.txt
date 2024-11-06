@@ -1,4 +1,4 @@
 ollama
 langchain_community
-langchain-ollama
-langchain
+langchain_ollama
+langchain_core
