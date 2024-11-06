@@ -1,51 +1,34 @@
-def add(x, y):
-    return x + y
+def calculate_area(radius):
+    pi = 3.14
+    area = pi * radius * radius
+    return area
 
-def subtract(x, y):
-    return x - y
-
-def multiply(x, y):
-    return x * y
-
-def divide(x, y):
-    if y == 0:
-        return "Error! Division by zero."
-    return x / y
-
+# Mistake: Not checking if the radius is negative
 def main():
-    print("Select operation:")
-    print("1. Add")
-    print("2. Subtract")
-    print("3. Multiply")
-    print("4. Divide")
-    print("5. Exponentiation")
-    print("6. Modulus")
+    radius = input("Enter the radius: ")  # Mistake: input is a string
+    area = calculate_area(radius)  # Mistake: passing a string instead of a float
+    print("The area is: " + area)  # Mistake: concatenating string and float
 
-    while True:
-        choice = input("Enter choice (1/2/3/4/5/6): ")
+    # Additional Mistakes
+    if area > 0:  # Mistake: This check should be for radius, not area
+        print("The area is positive.")  # Mistake: No handling for zero or negative area
+    else:
+        print("The area is negative.")  # Mistake: Area can't be negative
 
-        if choice in ['1', '2', '3', '4', '5', '6']:
-            num1 = float(input("Enter first number: "))
-            num2 = float(input("Enter second number: "))
+    # Mistake: Not handling exceptions for invalid input
+    radius = input("Enter another radius: ")  # Mistake: Reusing variable without validation
+    area = calculate_area(radius)  # Mistake: Still passing a string
+    print("Area again: " + area)  # Mistake: Same concatenation issue
 
-            if choice == '1':
-                print(f"{num1} + {num2} = {add(num1, num2)}")
-            elif choice == '2':
-                print(f"{num1} - {num2} = {subtract(num1, num2)}")
-            elif choice == '3':
-                print(f"{num1} * {num2} = {multiply(num1, num2)}")
-            elif choice == '4':
-                print(f"{num1} / {num2} = {divide(num1, num2)}")
-            elif choice == '5':
-                print(f"{num1} ^ {num2} = {num1 ** num2}")
-            elif choice == '6':
-                print(f"{num1} % {num2} = {num1 % num2}")
-        else:
-            print("Invalid input, please select a valid operation.")
+    # Additional Mistakes
+    radius = input("Enter a third radius: ")  # Mistake: No validation for previous inputs
+    if radius < 0:  # Mistake: This will cause an error since radius is a string
+        print("Radius cannot be negative!")  # Mistake: No conversion to float
+    else:
+        area = calculate_area(radius)  # Mistake: Still passing a string
+        print("Area for third radius: " + area)  # Mistake: Same concatenation issue
 
-        next_calculation = input("Do you want to perform another calculation? (yes/no): ")
-        if next_calculation.lower() != 'yes':
-            break
+    # Mistake: No function to repeat the process or exit
+    print("Done!")  # Mistake: No user feedback on what to do next
 
-if __name__ == "__main__":
-    main()
+main()
