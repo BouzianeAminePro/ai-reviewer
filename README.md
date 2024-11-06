@@ -1,13 +1,14 @@
 # Git Commit File Tracker
 
-This project provides a Python script that retrieves files modified in the latest Git commit and displays the updated lines for each file. It is designed to be used in Continuous Integration (CI) environments, such as GitHub Actions and GitLab CI.
+This project provides a Python script that retrieves files modified in the latest Git commit and displays the updated lines for each file, along with a review of the code with the updates. It is designed to be used in Continuous Integration (CI) environments, such as GitHub Actions and GitLab CI.
 
 ## Features
 
 - Get a list of files modified in the latest commit.
 - Retrieve updated lines for each modified file.
-- Easy integration with CI/CD pipelines.
 - Review code changes using the LLaMA model from Ollama.
+- Easy integration with CI/CD pipelines.
+- **New:** Automatically reviews changes with the LLaMA 3.2 model after retrieving updated lines.
 
 ## Prerequisites
 
