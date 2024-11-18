@@ -1,75 +1,184 @@
+import os
 import subprocess
-from langchain_ollama import OllamaLLM as Ollama
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.prompts import PromptTemplate
-from pydantic import BaseModel, Field
+import time
+import re
+import sqlite3
+import pickle
+import logging
 
-def get_latest_commit_files():
-    """Get files changed in the latest commit."""
-    result = subprocess.run(
-        ["git", "diff", "--name-only", "HEAD~1", "HEAD"],
-        stdout=subprocess.PIPE,
-        text=True
-    )
-    files = result.stdout.strip().splitlines()
+from langchain_ollama.llms import OllamaLLM as Ollama
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+REPO_IDENTIFIER = os.getenv("GITHUB_REPOSITORY_ID", 882801735)
+GITHUB_REF = os.getenv("GITHUB_REF", "refs/pull/1/merge")
+GITHUB_API_URL = os.getenv("GITHUB_API_URL", "https://api.github.com")
+IGNORED_FILES = os.getenv("IGNORED_FILES", ["README.md", ".gitignore", "requirements.txt"])
+
+CACHE_DB = 'cache.db'
+CACHE_EXPIRY = 3600
+PR_NUMBER = int(re.search(r'refs/pull/(\d+)/merge', GITHUB_REF).group(1)) if re.search(r'refs/pull/(\d+)/merge', GITHUB_REF) else None
+
+llm = Ollama(model="qwen2.5-coder:latest", base_url=os.getenv("OLLAMA_API_BASE_URL", "http://localhost:11434"))
+
+def init_cache_db():
+    """Initialize the SQLite database for caching."""
+    with sqlite3.connect(CACHE_DB) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS cache (
+                key TEXT PRIMARY KEY,
+                data BLOB,
+                timestamp REAL
+            )
+        ''')
+
+def cache_data(key, data):
+    """Cache data in SQLite."""
+    with sqlite3.connect(CACHE_DB) as conn:
+        conn.execute('REPLACE INTO cache (key, data, timestamp) VALUES (?, ?, ?)', 
+                     (key, pickle.dumps(data), time.time()))
+
+def fetch_from_cache(key):
+    """Retrieve data from the cache."""
+    with sqlite3.connect(CACHE_DB) as conn:
+        result = conn.execute('SELECT data, timestamp FROM cache WHERE key = ?', (key,)).fetchone()
+    return result
+
+def get_cached_data(key, fetch_function, *args):
+    """Fetch data with caching mechanism."""
+    cached_entry = fetch_from_cache(key)
+    if cached_entry and (time.time() - cached_entry[1]) < CACHE_EXPIRY:
+        return pickle.loads(cached_entry[0])
+    data = fetch_function(*args)
+    cache_data(key, data)
+    return data
+
+def fetch_github_data(command):
+    """Fetch data using Git command."""
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        raise Exception(f"Git Command Error: {result.stderr}")
+    return result.stdout
+
+def get_repository():
+    """Retrieve repository data."""
+    return fetch_github_data(['git', 'remote', '-v'])
+
+def get_pull_request(pr_number):
+    """Retrieve pull request data."""
+    logging.info(f"Fetching pull request {pr_number}...")
+    fetch_github_data(['git', 'fetch', 'origin', f'pull/{pr_number}/head:pr-{pr_number}'])
+    logging.info(f"Successfully fetched pull request {pr_number}.")
+
+def get_pull_request_files(pr_number):
+    """Retrieve pull request file data."""
+    logging.info(f"Fetching files for pull request {pr_number}...")
+    fetch_github_data(['git', 'fetch', 'origin', f'pull/{pr_number}/head:pr-{pr_number}'])
+    files = fetch_github_data(['git', 'diff', '--name-status', f'origin/main...pr-{pr_number}'])
+    logging.info(f"Successfully fetched files for pull request {pr_number}.")
     return files
 
-def get_changed_lines(file_path):
-    """Get changed lines in a file between the latest and the previous commit."""
-    result = subprocess.run(
-        ["git", "diff", "HEAD~1", "HEAD", "--", file_path],
-        stdout=subprocess.PIPE,
-        text=True
-    )
-    changes = ""
-    for line in result.stdout.splitlines():
-        # Only consider added lines
-        if line.startswith('+') and not line.startswith('+++'):
-            changes += line[1:]
-    return changes
+def get_pr_diff(pr_number):
+    """Fetch and format the pull request diff."""
+    files = get_pull_request_files(pr_number)
+    if not files:
+        print(f"No files found for pull request {pr_number}.")
+        return None
+    return fetch_github_data(['git', 'diff', f'origin/main...pr-{pr_number}'])
 
-def review_changes_with_llama(changed_lines):
-    """Use LLaMA model from Ollama to review the updated lines."""
-    # Initialize the LLaMA model through Ollama
-    llm = Ollama(model="llama3.2")
+def parse_diff(diff):
+    """Parse the Git diff output to extract modified lines."""
+    updates = {}
+    current_file = None
 
-    # Define a prompt template for reviewing code changes
-    template = """
-    Here's a text where file name seperated by an empty line with it code {code},
-    Please update, optimize and resolve bugs of the code
-    {format_instructions}
-    """
+    for line in diff.split("\n"):
+        if line.startswith("diff --git"):
+            current_file = line.split(" b/")[-1]
+            if current_file in IGNORED_FILES:
+                logging.info(f"Ignoring file: {current_file}")
+                current_file = None
+                continue
+            updates[current_file] = []
+            logging.info(f"Processing file: {current_file}")
+        elif line.startswith("@@"):
+            current_line = parse_chunk_header(line)
+        elif line.startswith("+") and not line.startswith("+++"):
+            if current_file and line[1:].strip() and not line[1:].strip().startswith("#") and not line[1:].strip() in ['{', '}', 'import', '(', ')'] and not line.startswith("from "):
+                updates[current_file].append((current_line, line[1:]))
+                current_line += 1
+    return updates
 
-    class Review(BaseModel):
-        fileName: str = Field(description="File name")
-        code: str = Field(description="Updated code")
+def parse_chunk_header(header):
+    """Extract line number from chunk header."""
+    match = re.search(r'@@ -\d+,\d+ \+(\d+)', header)
+    return int(match.group(1)) if match else 0
 
-    parser = JsonOutputParser(pydantic_object=Review)
-    prompt = PromptTemplate(input_variables=["code"], template=template, partial_variables={"format_instructions": parser.get_format_instructions()})
+def propose_updates(file_changes):
+    """Generate suggestions for modified lines."""
+    suggestions = {}
+    for file, changes in file_changes.items():
+        suggestions[file] = []
+        logging.info(f"Generating suggestions for file: {file}")
+        for line_num, line in changes:
+            if line.strip() == "":
+                continue
 
-    chain = prompt | llm | parser
-    return chain.invoke(input={"code": changed_lines})
+            logging.info(f"Processing line {line_num} in {file}: {line}")
 
+            prompt = f"Review the following line and suggest improvements only if necessary and primordial and give out only the code nothing more and don't review comments, imports or require, if there's none please write only NOTHING ! : {line}"
+            suggestion = llm.invoke(prompt)
+            if suggestion.strip() == 'NOTHING!':
+                continue
+            suggestions[file].append({
+                "line_number": line_num,
+                "line": line,
+                "suggestion": suggestion
+            })
+            logging.info(f"Suggestion for line {line_num} in {file}: {suggestion}")
+    return suggestions
+
+def add_comments_to_pr(pr_number, comments):
+    """Add comments to a pull request."""
+    logging.info(f"Adding comments to pull request {pr_number}...")
+    files = get_pull_request_files(pr_number).splitlines()
+
+    for file, suggestions in comments.items():
+        file_patch = next((f.split()[1] for f in files if f.split()[1] == file), None)
+        if not file_patch:
+            logging.warning(f"Patch not found for {file}.")
+            continue
+
+        for suggestion in suggestions:
+            try:
+                body = f"This is a suggestion for improvement: \n\n {suggestion['suggestion']}"
+                line_number = suggestion['line_number']
+                command = [
+                    'gh', 'pr', 'comment', str(pr_number),
+                    '--body', body,
+                    # '--path', file,
+                    # '--line', str(line_number)
+                ]
+                subprocess.run(command, check=True)
+                logging.info(f"Comment added for {file} at line {line_number}: {suggestion['suggestion']}")
+            except Exception as e:
+                logging.error(f"Error adding comment for {file} at line {line_number}: {e}")
+
+# Main Function
 def main():
-    print("Getting files modified in the latest commit...")
-    modified_files = get_latest_commit_files()
-    if not modified_files:
-        print("No files changed in the latest commit.")
-        return
+    try:
+        diff = get_pr_diff(PR_NUMBER)
+        if not diff:
+            print("Failed to fetch diff.")
+            return
 
-    all_changes = ""
-    for file_path in modified_files:
-        changed_lines = get_changed_lines(file_path)
-        if changed_lines:
-            all_changes = "\n".join([all_changes, file_path, changed_lines])
-        else:
-            print("No new lines added.")
-            
-    if all_changes:
-        # Review the changes with the LLaMA model
-        print("\nReviewing changes with LLaMA 3.2 model...")
-        review = review_changes_with_llama(all_changes)
-        print(review)
+        changes = parse_diff(diff)
+        suggestions = propose_updates(changes)
+        add_comments_to_pr(PR_NUMBER, suggestions)
+        print("Comments added successfully.")
+    except Exception as e:
+        print(f"Error: {e}")
 
 if __name__ == "__main__":
+    init_cache_db()
     main()
