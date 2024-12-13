@@ -12,8 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 REPO_IDENTIFIER = os.getenv("GITHUB_REPOSITORY_ID", 882801735)
-GITHUB_REF = os.getenv("GITHUB_REF", "refs/pull/1/merge")
-GITHUB_API_URL = os.getenv("GITHUB_API_URL", "https://api.github.com")
+GITHUB_REF = os.getenv("GITHUB_REF", "refs/pull/2/merge")
 IGNORED_FILES = os.getenv("IGNORED_FILES", ["README.md", ".gitignore", "requirements.txt"])
 
 CACHE_DB = 'cache.db'
@@ -120,22 +119,40 @@ def propose_updates(file_changes):
     for file, changes in file_changes.items():
         suggestions[file] = []
         logging.info(f"Generating suggestions for file: {file}")
+        
+        current_group = []
+
         for line_num, line in changes:
             if line.strip() == "":
                 continue
 
+            if current_group and line_num != current_group[-1][0] + 1:
+                # If the current line is not consecutive, process the current group
+                prompt = f"Review the following lines and suggest improvements only if necessary and primordial and give out only the code nothing more and don't review comments, imports or require, if there's none please write only NOTHING ! : {''.join(l[1] for l in current_group)}"
+                suggestion = llm.invoke(prompt)
+                if suggestion.strip() != 'NOTHING!':
+                    suggestions[file].append({
+                        "line_number": current_group[0][0],  # Use the first line number of the group
+                        "lines": [l[1] for l in current_group],
+                        "suggestion": suggestion
+                    })
+                current_group = []
+
+            current_group.append((line_num, line))
             logging.info(f"Processing line {line_num} in {file}: {line}")
 
-            prompt = f"Review the following line and suggest improvements only if necessary and primordial and give out only the code nothing more and don't review comments, imports or require, if there's none please write only NOTHING ! : {line}"
+        # Process any remaining lines in the last group
+        if current_group:
+            prompt = f"Review the following lines and suggest improvements only if necessary and primordial and give out only the code nothing more and don't review comments, imports or require, if there's none please write only NOTHING ! : {''.join(l[1] for l in current_group)}"
             suggestion = llm.invoke(prompt)
-            if suggestion.strip() == 'NOTHING!':
-                continue
-            suggestions[file].append({
-                "line_number": line_num,
-                "line": line,
-                "suggestion": suggestion
-            })
-            logging.info(f"Suggestion for line {line_num} in {file}: {suggestion}")
+            if suggestion.strip() != 'NOTHING!':
+                suggestions[file].append({
+                    "line_number": current_group[0][0],  # Use the first line number of the group
+                    "lines": [l[1] for l in current_group],
+                    "suggestion": suggestion
+                })
+            logging.info(f"Suggestion for lines {current_group[0][0]}-{current_group[-1][0]} in {file}: {suggestion}")
+
     return suggestions
 
 def add_comments_to_pr(pr_number, comments):
