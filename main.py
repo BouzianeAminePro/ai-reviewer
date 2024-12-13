@@ -128,14 +128,7 @@ def propose_updates(file_changes):
 
             if current_group and line_num != current_group[-1][0] + 1:
                 # If the current line is not consecutive, process the current group
-                prompt = f"Review the following lines and suggest improvements only if necessary and primordial and give out only the code nothing more and don't review comments, imports or require, if there's none please write only NOTHING ! : {''.join(l[1] for l in current_group)}"
-                suggestion = llm.invoke(prompt)
-                if suggestion.strip() != 'NOTHING!':
-                    suggestions[file].append({
-                        "line_number": current_group[0][0],  # Use the first line number of the group
-                        "lines": [l[1] for l in current_group],
-                        "suggestion": suggestion
-                    })
+                add_suggestion(suggestions[file], current_group)
                 current_group = []
 
             current_group.append((line_num, line))
@@ -143,17 +136,21 @@ def propose_updates(file_changes):
 
         # Process any remaining lines in the last group
         if current_group:
-            prompt = f"Review the following lines and suggest improvements only if necessary and primordial and give out only the code nothing more and don't review comments, imports or require, if there's none please write only NOTHING ! : {''.join(l[1] for l in current_group)}"
-            suggestion = llm.invoke(prompt)
-            if suggestion.strip() != 'NOTHING!':
-                suggestions[file].append({
-                    "line_number": current_group[0][0],  # Use the first line number of the group
-                    "lines": [l[1] for l in current_group],
-                    "suggestion": suggestion
-                })
-            logging.info(f"Suggestion for lines {current_group[0][0]}-{current_group[-1][0]} in {file}: {suggestion}")
+            add_suggestion(suggestions[file], current_group)
 
     return suggestions
+
+def add_suggestion(suggestions, current_group):
+    """Generate and add suggestion for the current group of lines."""
+    prompt = f"Review the following lines and suggest improvements only if necessary and primordial and give out only the code nothing more and don't review comments, imports or require, if there's none please write only NOTHING ! : {''.join(l[1] for l in current_group)}"
+    suggestion = llm.invoke(prompt)
+    if suggestion.strip() != 'NOTHING!':
+        suggestions.append({
+            "line_number": current_group[0][0],  # Use the first line number of the group
+            "lines": [l[1] for l in current_group],
+            "suggestion": suggestion
+        })
+    logging.info(f"Suggestion for lines {current_group[0][0]}-{current_group[-1][0]}: {suggestion}")
 
 def add_comments_to_pr(pr_number, comments):
     """Add comments to a pull request."""
