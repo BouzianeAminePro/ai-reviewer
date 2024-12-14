@@ -15,6 +15,7 @@ This project provides a Python script that retrieves files modified in the lates
 - Docker
 - Git
 - Python 3.11 or higher (for local testing)
+- **New:** GitHub CLI (`gh`) for adding comments to pull requests
 
 ## Setup
 
@@ -80,6 +81,18 @@ track_commits:
   script:
     - python main.py
 ```
+
+## Python Script: `main.py`
+
+The `main.py` script is responsible for fetching pull request data, parsing the changes, and generating suggestions for improvements. It utilizes the LLaMA model for code review and integrates with the GitHub CLI to add comments to pull requests
+
+### Key Functions
+
+- **init_cache_db**: Initializes a SQLite database for caching.
+- **get_pull_request**: Fetches pull request data from Git.
+- **parse_diff**: Parses the Git diff output to extract modified lines.
+- **propose_updates**: Generates suggestions for modified lines using the LLaMA model.
+- **add_comments_to_pr**: Adds comments to the pull request with suggestions.
 
 ## License
 
