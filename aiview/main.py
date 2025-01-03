@@ -173,7 +173,6 @@ def add_comments_to_pr(pr_number, comments):
 # Main Function
 def main():
     try:
-        # init_cache_db()
         diff = get_pr_diff(PR_NUMBER)
         if not diff:
             print("Failed to fetch diff.")
