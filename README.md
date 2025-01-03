@@ -1,4 +1,4 @@
-# Git Commit File reviewer
+# Git Commit File Reviewer
 
 This project provides a Python script that retrieves files modified in the latest Git commit and displays the updated lines for each file, along with a review of the code with the updates. It is designed to be used in Continuous Integration (CI) environments, such as GitHub Actions and GitLab CI.
 
