@@ -1,0 +1,2 @@
+- [x] Group updates if they're nested
+- [x] Make model preference customizable
