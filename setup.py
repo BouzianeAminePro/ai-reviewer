@@ -15,7 +15,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "aiview=aiview.main:main",
+            "aiview=code.main:main",
         ],
     },
     classifiers=[

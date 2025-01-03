@@ -1,0 +1,20 @@
+name: "Run Python Action to Print Updated Lines"
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      OLLAMA_MODEL: "codellama"
+      OLLAMA_API_BASE_URL: "https://ollama.kabla.xyz"
+      IGNORED_FILES: "['README.md', '.gitignore', 'requirements.txt']"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Run Python Action
+        uses: ./
